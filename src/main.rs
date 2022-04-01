@@ -11,11 +11,14 @@ async fn main() {
     let camera1_cf = try_create_cf(&db, "camera_1").expect("camera1_cf");
     let camera2_cf = try_create_cf(&db, "camera_2").expect("camera2_cf");
 
-    write_camera_images(Arc::clone(&camera1_cf), 100).expect("Write Camera 1 Images");
+    write_camera_images(Arc::clone(&camera1_cf), 100)
+        .await
+        .expect("Write Camera 1 Images");
 }
 
-async fn write_camera_images(camera_cf: Arc<BoundColumnFamily>, n_images: usize) -> Result<()> {
-    tokio::time::interval_at()
+async fn write_camera_images(camera_cf: Arc<BoundColumnFamily<'_>>, n_images: usize) -> Result<()> {
+    // tokio::time::interval_at()
+    todo!();
 }
 
 fn create_with_existing_cf(db_path: &str) -> Result<DB, rocksdb::Error> {
