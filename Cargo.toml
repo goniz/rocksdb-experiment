@@ -6,6 +6,9 @@ edition = "2021"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-rocksdb = { version = "0.18.0", default-features = false, features = ["multi-threaded-cf"] }
+rocksdb = { version = "0.18.0", default-features = false, features = ["multi-threaded-cf", "snappy"] }
 anyhow = "1"
 tokio = { version = "1", features = ["full"] }
+tokio-stream = "0.1.8"
+futures = "0.3.21"
+rand = "0.8.5"
