@@ -27,7 +27,9 @@ async fn main() {
     db.add_camera("camera1");
     db.add_camera("camera2");
 
-    let start_index: u64 = 10_000;
+    let start_index: u64 = seed_db(&db, &["camera1", "camera2"], 10_000)
+        .await
+        .expect("seed_db");
 
     let camera1_write_db = db.clone();
     let camera1_write_handle = tokio::task::spawn(async move {
@@ -62,6 +64,26 @@ async fn main() {
         camera2_write_handle,
         camera2_read_handle
     );
+}
+
+async fn seed_db(
+    db: &impl FakeStorageImpl,
+    cameras: &[&str],
+    images_per_camera: u64,
+) -> Result<u64> {
+    println!("Seeding DB before benchmark");
+
+    let jpeg_buffer: Vec<u8> = std::iter::repeat_with(rand::random::<u8>)
+        .take(140 * 1024)
+        .collect();
+
+    for index in 0..images_per_camera {
+        for &camera_id in cameras {
+            db.write_image(camera_id, index, &jpeg_buffer).await?;
+        }
+    }
+
+    Ok(images_per_camera)
 }
 
 async fn read_camera_images(
