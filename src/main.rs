@@ -2,6 +2,7 @@ use std::time::Duration;
 
 use anyhow::Result;
 use async_trait::async_trait;
+use clap::Parser;
 use futures::pin_mut;
 use rand::prelude::IteratorRandom;
 use tokio::{task::JoinHandle, time::Instant};
@@ -10,9 +11,7 @@ use tokio_stream::{wrappers::IntervalStream, StreamExt};
 #[async_trait]
 pub trait FakeStorageImpl: Clone + Send + Sync + 'static {
     fn add_camera(&self, name: &str);
-
     async fn write_image(&self, camera: &str, index: u64, image: &[u8]) -> Result<()>;
-
     async fn read_image(&self, camera: &str, index: u64) -> Result<Option<Vec<u8>>>;
 }
 
@@ -22,33 +21,46 @@ mod filesystem_impl;
 #[allow(dead_code)]
 mod rocksdb_impl;
 
+mod args;
+
+#[derive(Clone)]
+pub enum SupportedDatabase {
+    Filesystem(filesystem_impl::FilesystemStorage),
+    RocksDB(rocksdb_impl::RocksDB),
+}
+
 #[tokio::main]
 async fn main() {
-    let db_path = "db";
-    let cameras = vec!["camera1", "camera2"];
-    let n_readers: usize = 150;
-    let readers_rate: usize = 10;
-    let seed = false;
-    let seed_images_per_camera = 150_000;
-    let ram_buffer_mb: usize = 5_000;
+    let args = args::Arguments::parse();
 
-    // let db = rocksdb_impl::RocksDB::new(db_path).expect("RocksDB::new");
-    let db = filesystem_impl::FilesystemStorage::new(db_path).expect("FilesystemStorage::new");
+    let db: SupportedDatabase = match args.db_type {
+        args::DatabaseType::Filesystem => SupportedDatabase::Filesystem(
+            filesystem_impl::FilesystemStorage::new(&args.db_path).expect("FilesystemStorage::new"),
+        ),
+        args::DatabaseType::RocksDB => SupportedDatabase::RocksDB(
+            rocksdb_impl::RocksDB::new(&args.db_path).expect("RocksDB::new"),
+        ),
+    };
+
+    let cameras: Vec<String> = (0..args.n_cameras)
+        .map(|idx| format!("camera{}", idx))
+        .collect();
 
     for camera in &cameras {
         db.add_camera(camera);
     }
 
-    let writers_start_index: u64 = if seed {
-        seed_db(&db, &cameras, seed_images_per_camera)
+    let writers_start_index: u64 = if args.seed_db {
+        seed_db(&db, &cameras, args.seed_images_per_camera)
             .await
             .expect("seed_db")
     } else {
-        seed_images_per_camera
+        args.seed_images_per_camera
     };
 
     let (ptr, layout) = unsafe {
-        let layout = std::alloc::Layout::from_size_align(ram_buffer_mb * 1024 * 1024, 8).unwrap();
+        let layout =
+            std::alloc::Layout::from_size_align(args.ram_buffer_mb * 1024 * 1024, 8).unwrap();
         let ptr = std::alloc::alloc(layout);
 
         std::ptr::write_bytes(ptr, 1_u8, layout.size());
@@ -62,8 +74,8 @@ async fn main() {
         &cameras,
         0,
         writers_start_index,
-        n_readers,
-        readers_rate,
+        args.n_readers,
+        args.readers_rate,
     );
 
     let _ = futures::future::join_all(writers.into_iter().chain(readers.into_iter())).await;
@@ -75,7 +87,7 @@ async fn main() {
 
 fn spawn_readers(
     db: impl FakeStorageImpl,
-    cameras: &[&str],
+    cameras: &[String],
     start_index: u64,
     end_index: u64,
     n_readers: usize,
@@ -87,8 +99,7 @@ fn spawn_readers(
                 .iter()
                 .choose(&mut rand::thread_rng())
                 .cloned()
-                .expect("choose")
-                .to_owned();
+                .expect("choose");
 
             let db_cloned = db.clone();
             tokio::task::spawn(async move {
@@ -102,14 +113,14 @@ fn spawn_readers(
 
 fn spawn_writers(
     db: impl FakeStorageImpl,
-    cameras: &[&str],
+    cameras: &[String],
     start_index: u64,
 ) -> Vec<JoinHandle<()>> {
     cameras
         .iter()
-        .map(|&camera| {
+        .map(|camera| {
             let db_cloned = db.clone();
-            let camera_name = camera.to_owned();
+            let camera_name = camera.clone();
             tokio::task::spawn(async move {
                 write_camera_images(db_cloned, &camera_name, start_index)
                     .await
@@ -121,7 +132,7 @@ fn spawn_writers(
 
 async fn seed_db(
     db: &impl FakeStorageImpl,
-    cameras: &[&str],
+    cameras: &[String],
     images_per_camera: u64,
 ) -> Result<u64> {
     println!("Seeding DB before benchmark");
@@ -131,7 +142,7 @@ async fn seed_db(
         .collect();
 
     for index in 0..images_per_camera {
-        for &camera_id in cameras {
+        for camera_id in cameras {
             db.write_image(camera_id, index, &jpeg_buffer).await?;
         }
     }
@@ -207,4 +218,28 @@ async fn write_camera_images(
     }
 
     Ok(())
+}
+
+#[async_trait]
+impl FakeStorageImpl for SupportedDatabase {
+    fn add_camera(&self, name: &str) {
+        match self {
+            SupportedDatabase::Filesystem(fs) => fs.add_camera(name),
+            SupportedDatabase::RocksDB(rocks) => rocks.add_camera(name),
+        }
+    }
+
+    async fn write_image(&self, camera: &str, index: u64, image: &[u8]) -> Result<()> {
+        match self {
+            SupportedDatabase::Filesystem(fs) => fs.write_image(camera, index, image).await,
+            SupportedDatabase::RocksDB(rocks) => rocks.write_image(camera, index, image).await,
+        }
+    }
+
+    async fn read_image(&self, camera: &str, index: u64) -> Result<Option<Vec<u8>>> {
+        match self {
+            SupportedDatabase::Filesystem(fs) => fs.read_image(camera, index).await,
+            SupportedDatabase::RocksDB(rocks) => rocks.read_image(camera, index).await,
+        }
+    }
 }
