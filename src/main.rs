@@ -42,7 +42,7 @@ async fn main() {
         ),
     };
 
-    let cameras: Vec<String> = (0..args.n_cameras)
+    let cameras: Vec<String> = (1..=args.n_cameras)
         .map(|idx| format!("camera{}", idx))
         .collect();
 

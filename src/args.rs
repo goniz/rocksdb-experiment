@@ -1,5 +1,3 @@
-use clap::Parser;
-
 #[derive(clap::Parser)]
 pub struct Arguments {
     #[clap(long, default_value = "./db")]
