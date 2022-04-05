@@ -26,19 +26,20 @@ mod rocksdb_impl;
 async fn main() {
     let db_path = "db";
     let cameras = vec!["camera1", "camera2"];
-    let n_readers: usize = 100;
+    let n_readers: usize = 150;
     let readers_rate: usize = 10;
-    let seed = true;
+    let seed = false;
     let seed_images_per_camera = 150_000;
+    let ram_buffer_mb: usize = 5_000;
 
-    let db = rocksdb_impl::RocksDB::new(db_path).expect("RocksDB::new");
-    // let db = filesystem_impl::FilesystemStorage::new(db_path).expect("FilesystemStorage::new");
+    // let db = rocksdb_impl::RocksDB::new(db_path).expect("RocksDB::new");
+    let db = filesystem_impl::FilesystemStorage::new(db_path).expect("FilesystemStorage::new");
 
     for camera in &cameras {
         db.add_camera(camera);
     }
 
-    let start_index: u64 = if seed {
+    let writers_start_index: u64 = if seed {
         seed_db(&db, &cameras, seed_images_per_camera)
             .await
             .expect("seed_db")
@@ -46,17 +47,37 @@ async fn main() {
         seed_images_per_camera
     };
 
-    let writers: Vec<JoinHandle<()>> = spawn_writers(db.clone(), &cameras, start_index);
-    let readers: Vec<JoinHandle<()>> =
-        spawn_readers(db.clone(), &cameras, 0, n_readers, readers_rate);
+    let (ptr, layout) = unsafe {
+        let layout = std::alloc::Layout::from_size_align(ram_buffer_mb * 1024 * 1024, 8).unwrap();
+        let ptr = std::alloc::alloc(layout);
+
+        std::ptr::write_bytes(ptr, 1_u8, layout.size());
+
+        (ptr, layout)
+    };
+
+    let writers: Vec<JoinHandle<()>> = spawn_writers(db.clone(), &cameras, writers_start_index);
+    let readers: Vec<JoinHandle<()>> = spawn_readers(
+        db.clone(),
+        &cameras,
+        0,
+        writers_start_index,
+        n_readers,
+        readers_rate,
+    );
 
     let _ = futures::future::join_all(writers.into_iter().chain(readers.into_iter())).await;
+
+    unsafe {
+        std::alloc::dealloc(ptr, layout);
+    }
 }
 
 fn spawn_readers(
     db: impl FakeStorageImpl,
     cameras: &[&str],
     start_index: u64,
+    end_index: u64,
     n_readers: usize,
     rate: usize,
 ) -> Vec<JoinHandle<()>> {
@@ -71,15 +92,9 @@ fn spawn_readers(
 
             let db_cloned = db.clone();
             tokio::task::spawn(async move {
-                read_images(
-                    db_cloned,
-                    &camera,
-                    start_index,
-                    Duration::from_secs(0),
-                    rate,
-                )
-                .await
-                .expect("Read Camera 2 Images");
+                read_images(db_cloned, &camera, start_index, end_index, rate)
+                    .await
+                    .expect("Read Camera 2 Images");
             })
         })
         .collect()
@@ -128,28 +143,23 @@ async fn read_images(
     db: impl FakeStorageImpl,
     camera_name: &str,
     start_index: u64,
-    initial_delay: Duration,
+    end_index: u64,
     rate: usize,
 ) -> Result<()> {
-    println!(
-        "[{}] Read Task: Waiting for {} seconds",
-        camera_name,
-        initial_delay.as_secs()
-    );
-
-    tokio::time::sleep(initial_delay).await;
-
     let interval = tokio::time::interval_at(Instant::now(), Duration::from_secs(1) / rate as u32);
     let stream = IntervalStream::new(interval);
 
     pin_mut!(stream);
 
-    let mut index = start_index;
     let mut max_duration = Duration::from_secs(0);
 
     println!("[{}] Starting read task", camera_name);
 
     while (stream.next().await).is_some() {
+        let index = (start_index..end_index)
+            .choose(&mut rand::thread_rng())
+            .unwrap();
+
         let start = Instant::now();
         let _ = db.read_image(camera_name, index).await?;
 
@@ -158,8 +168,6 @@ async fn read_images(
             max_duration = elapsed;
             println!("[{}] Max read time: {:?}", camera_name, elapsed);
         }
-
-        index += 1;
     }
 
     Ok(())
