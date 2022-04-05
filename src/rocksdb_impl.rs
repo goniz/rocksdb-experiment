@@ -26,30 +26,30 @@ impl FakeStorageImpl for RocksDB {
     }
 
     async fn write_image(&self, camera: &str, index: u64, image: &[u8]) -> Result<()> {
+        let db = self.db.clone();
+        let camera = camera.to_owned();
         let key = format!("{}.jpg", index);
+        let image = image.to_owned();
 
-        let cf = self
-            .db
-            .cf_handle(camera)
-            .context("Failed to open cf handle")?;
+        tokio::task::spawn_blocking(move || -> Result<()> {
+            let cf = db.cf_handle(&camera).context("Failed to open cf handle")?;
+            db.put_cf(&cf, key, &image).context("Failed to put_cf()")?;
 
-        // TODO: maybe use tokio::spawn_blocking()
-        self.db
-            .put_cf(&cf, key, image)
-            .context("Failed to put_cf()")?;
-
-        Ok(())
+            Ok(())
+        })
+        .await?
     }
 
     async fn read_image(&self, camera: &str, index: u64) -> Result<Option<Vec<u8>>> {
+        let db = self.db.clone();
+        let camera = camera.to_owned();
         let key = format!("{}.jpg", index);
 
-        let cf = self
-            .db
-            .cf_handle(camera)
-            .context("Failed to open cf handle")?;
-
-        self.db.get_cf(&cf, &key).context("Key not found")
+        tokio::task::spawn_blocking(move || -> Result<Option<Vec<u8>>> {
+            let cf = db.cf_handle(&camera).context("Failed to open cf handle")?;
+            db.get_cf(&cf, &key).context("Key not found")
+        })
+        .await?
     }
 }
 

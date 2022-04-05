@@ -1,7 +1,7 @@
 use std::{path::PathBuf, str::FromStr};
 
 use super::FakeStorageImpl;
-use anyhow::{Context, Result};
+use anyhow::Result;
 use async_trait::async_trait;
 
 #[derive(Clone)]
@@ -30,7 +30,7 @@ impl FakeStorageImpl for FilesystemStorage {
         let file_name = format!("{}.jpg", index);
         let file_path = self.path.join(camera).join(file_name);
 
-        std::fs::write(file_path, image)?;
+        tokio::fs::write(file_path, image).await?;
 
         Ok(())
     }
@@ -40,6 +40,6 @@ impl FakeStorageImpl for FilesystemStorage {
         let file_path = self.path.join(camera).join(file_name);
 
         // TODO: should return Ok(None) if not found
-        Ok(Some(std::fs::read(file_path)?))
+        Ok(Some(tokio::fs::read(file_path).await?))
     }
 }

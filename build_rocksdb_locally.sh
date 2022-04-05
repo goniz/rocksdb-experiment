@@ -9,13 +9,17 @@ cd ./rust-rocksdb
 unset ROCKSDB_LIB_DIR
 unset ROCKSDB_STATIC
 
-# TODO: pass features as args
-cargo clean
-cargo build --release --no-default-features --features snappy
+local_rocksdb_archive="$PWD/librocksdb.a"
 
-# TODO: copy the librocksdb.a to the root directory
-rocksdb_archive="$(find ./target/ -type f -name librocksdb.a)"
-rocksdb_lib_dir="$(dirname $rocksdb_archive)"
+if [[ ! -f "$local_rocksdb_archive" ]]; then
+    # TODO: pass features as args
+    cargo clean
+    cargo build --release --no-default-features --features snappy
 
-echo "export ROCKSDB_LIB_DIR=\"$(readlink -f $(dirname $rocksdb_archive))\""
+    found_rocksdb_archive="$(find ./target/ -type f -name librocksdb.a)"
+    cp "$found_rocksdb_archive" "$local_rocksdb_archive"
+fi
+
+
+echo "export ROCKSDB_LIB_DIR=\"$(readlink -f $PWD)\""
 echo "export ROCKSDB_STATIC=1"
