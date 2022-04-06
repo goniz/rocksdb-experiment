@@ -10,8 +10,15 @@ pub struct Sled {
 
 impl Sled {
     pub fn new(path: &str) -> Result<Self> {
+        let config = sled::Config::new()
+            .path(path)
+            .mode(sled::Mode::LowSpace)
+            .cache_capacity(1024 * 1024 * 1024)
+            .use_compression(false)
+            .print_profile_on_drop(true);
+
         Ok(Self {
-            db: sled::open(path).context("Failed to create DB")?,
+            db: config.open().context("Failed to create DB")?,
         })
     }
 }
