@@ -57,6 +57,13 @@ fn create_with_existing_cf(db_path: &str) -> Result<Arc<DB>, rocksdb::Error> {
     let mut opts = rocksdb::Options::default();
     opts.create_if_missing(true);
 
+    // TODO: check these options
+    // opts.set_max_background_jobs(4);
+    // opts.set_bytes_per_sync(1048576);
+
+    // TODO: use TTL
+    // DB::open_with_ttl(opts, path, ttl)
+
     match DB::list_cf(&opts, db_path) {
         Ok(cfs) => {
             println!("CF: {:?}", &cfs);

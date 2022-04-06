@@ -14,3 +14,4 @@ futures = "0.3.21"
 rand = "0.8.5"
 async-trait = "0.1.53"
 clap = { version = "3", features = ["derive"] }
+prometheus = "0.13.0"
