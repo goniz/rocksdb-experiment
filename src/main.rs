@@ -15,11 +15,9 @@ pub trait FakeStorageImpl: Clone + Send + Sync + 'static {
     async fn read_image(&self, camera: &str, index: u64) -> Result<Option<Vec<u8>>>;
 }
 
-#[allow(dead_code)]
 mod filesystem_impl;
-
-#[allow(dead_code)]
 mod rocksdb_impl;
+mod sled_impl;
 
 mod args;
 
@@ -27,6 +25,7 @@ mod args;
 pub enum SupportedDatabase {
     Filesystem(filesystem_impl::FilesystemStorage),
     RocksDB(rocksdb_impl::RocksDB),
+    Sled(sled_impl::Sled),
 }
 
 #[tokio::main]
@@ -40,6 +39,9 @@ async fn main() {
         args::DatabaseType::RocksDB => SupportedDatabase::RocksDB(
             rocksdb_impl::RocksDB::new(&args.db_path).expect("RocksDB::new"),
         ),
+        args::DatabaseType::Sled => {
+            SupportedDatabase::Sled(sled_impl::Sled::new(&args.db_path).expect("Sled::new"))
+        }
     };
 
     let cameras: Vec<String> = (1..=args.n_cameras)
@@ -226,6 +228,7 @@ impl FakeStorageImpl for SupportedDatabase {
         match self {
             SupportedDatabase::Filesystem(fs) => fs.add_camera(name),
             SupportedDatabase::RocksDB(rocks) => rocks.add_camera(name),
+            SupportedDatabase::Sled(sled) => sled.add_camera(name),
         }
     }
 
@@ -233,6 +236,7 @@ impl FakeStorageImpl for SupportedDatabase {
         match self {
             SupportedDatabase::Filesystem(fs) => fs.write_image(camera, index, image).await,
             SupportedDatabase::RocksDB(rocks) => rocks.write_image(camera, index, image).await,
+            SupportedDatabase::Sled(sled) => sled.write_image(camera, index, image).await,
         }
     }
 
@@ -240,6 +244,7 @@ impl FakeStorageImpl for SupportedDatabase {
         match self {
             SupportedDatabase::Filesystem(fs) => fs.read_image(camera, index).await,
             SupportedDatabase::RocksDB(rocks) => rocks.read_image(camera, index).await,
+            SupportedDatabase::Sled(sled) => sled.read_image(camera, index).await,
         }
     }
 }

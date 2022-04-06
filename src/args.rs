@@ -29,4 +29,5 @@ pub struct Arguments {
 pub enum DatabaseType {
     Filesystem,
     RocksDB,
+    Sled,
 }

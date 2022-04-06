@@ -15,3 +15,4 @@ rand = "0.8.5"
 async-trait = "0.1.53"
 clap = { version = "3", features = ["derive"] }
 prometheus = "0.13.0"
+sled = { version = "0.34.7", features = ["compression"] }
